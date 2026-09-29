@@ -114,7 +114,16 @@ def compute_n_step_returns(
         R_T = next_value.
     """
     # ===================== YOUR CODE HERE (Part 1) =====================
-    raise NotImplementedError("Implement compute_n_step_returns")
+    # Percorremos o rollout de tras para frente acumulando o retorno.
+    # O passo T+1 nao existe, entao a recursao comeca no bootstrap do critico.
+    returns = torch.zeros_like(rewards)
+    running = next_value
+    for t in reversed(range(rewards.shape[0])):
+        # (1 - dones[t]) zera o futuro quando o episodio terminou nesse passo:
+        # nao existe continuacao para descontar, o retorno e so a recompensa.
+        running = rewards[t] + gamma * (1.0 - dones[t]) * running
+        returns[t] = running
+    return returns
     # ===================================================================
 
 
@@ -132,7 +141,16 @@ def compute_policy_loss(
     *ascent*.
     """
     # ===================== YOUR CODE HERE (Part 2) =====================
-    raise NotImplementedError("Implement compute_policy_loss")
+    # O peso de cada log-prob e a vantagem. Ele entra como CONSTANTE: o
+    # detach corta o caminho do gradiente para o critico, senao a perda de
+    # politica tambem empurraria V(s) e deixaria de ser gradiente de politica.
+    if use_baseline:
+        weights = (returns - values).detach()
+    else:
+        weights = returns.detach()
+
+    # Sinal negativo: minimizar isto equivale a subir o gradiente de politica.
+    return -(logprobs * weights).mean()
     # ===================================================================
 
 

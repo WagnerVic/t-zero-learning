@@ -61,7 +61,18 @@ class DiscreteActorCritic(nn.Module):
         ``sample()``, ``log_prob(action)`` and ``entropy()``.
         """
         # ===================== YOUR CODE HERE (Part 3) =====================
-        raise NotImplementedError("Implement DiscreteActorCritic.get_action_and_value")
+        logits = self.actor(x)
+        probs = Categorical(logits=logits)
+
+        if action is None:
+            # Avaliacao usa o argmax; o treino amostra, que e o que mantem a
+            # exploracao viva e da sentido ao bonus de entropia.
+            action = torch.argmax(logits, dim=-1) if deterministic else probs.sample()
+
+        # Quando uma acao vem de fora, avaliamos a log-prob DELA. E o que o
+        # update faz: recalcular as log-probs das acoes ja executadas no rollout,
+        # agora com grafo de gradiente.
+        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
         # ===================================================================
 
     def act(self, x, deterministic: bool = False):
