@@ -1,0 +1,92 @@
+[
+ {
+  "rotulo": "Extra n=32, 16 envs, 3M",
+  "id": "qd17pm5u",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/qd17pm5u"
+ },
+ {
+  "rotulo": "Extra n=5, 16 envs, 12M",
+  "id": "wbz9hx6x",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/wbz9hx6x"
+ },
+ {
+  "rotulo": "Extra n=5, 16 envs, 3M",
+  "id": "f8gxwufl",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/f8gxwufl"
+ },
+ {
+  "rotulo": "Extra n=5, 16 envs, 6M",
+  "id": "kxnsiek6",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/kxnsiek6"
+ },
+ {
+  "rotulo": "Extra n=5, 32 envs, 6M",
+  "id": "kcrod2ts",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/kcrod2ts"
+ },
+ {
+  "rotulo": "Extra n=5, 8 envs, 6M",
+  "id": "41ywr8g5",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/41ywr8g5"
+ },
+ {
+  "rotulo": "Extra n=8, 16 envs, 6M",
+  "id": "kbeniyu6",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/kbeniyu6"
+ },
+ {
+  "rotulo": "Q1 num_envs=1",
+  "id": "tv30atv4",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/tv30atv4"
+ },
+ {
+  "rotulo": "Q1 num_envs=32",
+  "id": "c1x4217s",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/c1x4217s"
+ },
+ {
+  "rotulo": "Q2 num_steps=1",
+  "id": "gfqub3oy",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/gfqub3oy"
+ },
+ {
+  "rotulo": "Q2 num_steps=128",
+  "id": "joxko0pd",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/joxko0pd"
+ },
+ {
+  "rotulo": "Q2 num_steps=32",
+  "id": "zurv8rao",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/zurv8rao"
+ },
+ {
+  "rotulo": "Q3 ent_coef=0 (seed 1)",
+  "id": "rvz5tdoh",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/rvz5tdoh"
+ },
+ {
+  "rotulo": "Q3 ent_coef=0 (seed 2)",
+  "id": "ncgqp1cn",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/ncgqp1cn"
+ },
+ {
+  "rotulo": "Q3 ent_coef=0.1",
+  "id": "e6ja6b30",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/e6ja6b30"
+ },
+ {
+  "rotulo": "Q4 use_baseline=false (seed 1)",
+  "id": "slkzh30b",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/slkzh30b"
+ },
+ {
+  "rotulo": "Q4 use_baseline=false (seed 2)",
+  "id": "35ymeph9",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/35ymeph9"
+ },
+ {
+  "rotulo": "baseline",
+  "id": "kj0lbfb9",
+  "url": "https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment/runs/kj0lbfb9"
+ }
+]

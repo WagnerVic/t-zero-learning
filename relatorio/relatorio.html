@@ -1,0 +1,186 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>Atividade A2C</title>
+<style>
+  @page { size: A4; margin: 11mm 13mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 8.6pt; line-height: 1.26;
+         color: #111; margin: 0; }
+  h1 { font-size: 15pt; margin: 0 0 2mm; color: #1a3a5c; }
+  h2 { font-size: 10.2pt; margin: 2.4mm 0 1mm; color: #1a3a5c;
+       border-bottom: 1px solid #cdd8e3; padding-bottom: 0.6mm; }
+  .meta { font-size: 8pt; color: #444; margin-bottom: 2mm; }
+  .rot { font-weight: 700; color: #33608f; }
+  p { margin: 0 0 1.2mm; text-align: justify; }
+  figure { margin: 1.1mm 0; page-break-inside: avoid; }
+  figure img { width: 100%; }
+  figcaption { font-size: 7.2pt; color: #555; font-style: italic; margin-top: 0.6mm; }
+  table { border-collapse: collapse; font-size: 7.8pt; margin: 1.2mm 0; width: 100%; }
+  th, td { border: 1px solid #ccd; padding: 0.7mm 1.6mm; text-align: right; }
+  th { background: #eef3f8; text-align: center; }
+  td:first-child, th:first-child { text-align: left; }
+  code { font-family: Menlo, monospace; font-size: 8pt; background: #f2f4f7; padding: 0 0.6mm; }
+</style></head><body>
+
+<h1>Atividade: Policy Gradient com Actor-Critic (A2C)</h1>
+<div class="meta">
+Wagner Victor Alves de Menezes e Victor Ribeiro Jacome (dupla) &nbsp;|&nbsp;
+Fork: https://github.com/WagnerVic/t-zero-learning &nbsp;|&nbsp;
+wandb: https://wandb.ai/wagnervicwv-federal-university-of-goi-s/a2c-assignment &nbsp;|&nbsp;
+Config: <code>a2c_cartpole.yml</code> (CartPole-v1, 500k passos, num_envs=8, num_steps=5,
+gamma=0,99, lr=7e-4, ent_coef=0,01, vf_coef=0,5, use_baseline=true; em cada questão só o
+hiperparâmetro sob varredura muda).
+</div>
+<p>As três partes de implementação estão em <code>algorithms/a2c.py</code>
+(<code>compute_n_step_returns</code>, <code>compute_policy_loss</code>) e
+<code>networks/discrete_actor_critic.py</code> (<code>get_action_and_value</code>). Os 14 testes de
+<code>tests/test_a2c.py</code> passam. O baseline chega a retorno médio 478 nos últimos 30% do treino,
+com pico em 493. As previsões foram escritas e gravadas antes de qualquer varredura
+(<code>relatorio/previsoes.md</code>).</p>
+
+<h2>Q1 &middot; Número de atores em paralelo (num_envs)</h2>
+<p><span class="rot">Previsão.</span> O lote de cada atualização é num_envs x num_steps, então com 1
+ambiente ele cai para 5 transições e o <code>policy_loss</code> deve ficar bem mais ruidoso, porque a
+média de 5 amostras estima mal o gradiente. Com 32 o gradiente fica limpo, mas cabem 4 vezes menos
+atualizações em 500k passos, então ele pode até terminar atrás. O SPS deve subir bastante.</p>
+<p><span class="rot">Varredura.</span> <code>num_envs</code> em {1, 8 (baseline), 32}.</p>
+<figure><img src="fig_q1.png">
+<figcaption>Figura 1. Retorno, policy_loss sem suavização e SPS. Azul = baseline (8 envs),
+vermelho = 1 env, verde = 32 envs. Runs no wandb: baseline: <code>kj0lbfb9</code> &middot; 1 env: <code>tv30atv4</code> &middot; 32 envs: <code>c1x4217s</code>.</figcaption></figure>
+<p><span class="rot">Explicação.</span> O ruído do gradiente aparece direto no desvio-padrão do
+<code>policy_loss</code>: 4,45 com lote de 5, 1,37 com lote de 40 e 0,74 com lote de 160. A queda
+acompanha de perto o 1/raiz(B) que a média amostral prevê, e no gráfico do meio isso vira os picos
+fundos do run vermelho, que chega a passar de -10 enquanto os outros dois ficam contidos.</p>
+<p>O enunciado pede para separar dois efeitos que andam juntos, e os números deixam fazer isso. Com 1
+ambiente o agente executa 100.000 atualizações, oito vezes mais que as 12.500 do baseline, e mesmo
+assim termina pior (mediana 341 contra 478). Ou seja, atualizar mais vezes não compensa seguir um
+gradiente ruim. Do outro lado, com 32 ambientes são só 3.125 atualizações e o retorno fica em 429,
+um pouco abaixo do baseline: aqui o gradiente é o mais limpo dos três, mas faltam passos de
+otimização. O melhor ponto fica no meio, que é onde o baseline está. O SPS vai de 5.091 para 28.107
+e depois 59.757, quase 12 vezes, porque dar um passo em 32 ambientes vetorizados custa quase o mesmo
+que em 1. É isso que o paralelismo compra: tempo de relógio, não qualidade por atualização. A
+previsão se confirmou nos três pontos, inclusive na suspeita de que 32 terminaria atrás.</p>
+
+<h2>Q2 &middot; Horizonte do retorno de n passos (num_steps)</h2>
+<p><span class="rot">Previsão.</span> Com num_steps=1 o alvo é quase todo bootstrap, com pouca
+variância e muito viés vindo de um crítico ainda errado; com 128 é quase Monte Carlo, com pouco viés
+e muita variância. Espero <code>value_loss</code> pequeno no 1 e grande no 128. Aposto que o baseline
+de 5 fica no melhor ponto. Desconfio da armadilha do enunciado: no num_steps=1 o crítico está sendo
+medido contra si mesmo.</p>
+<p><span class="rot">Varredura.</span> <code>a2c.num_steps</code> em {1, 5 (baseline), 32, 128}.</p>
+<figure><img src="fig_q2.png">
+<figcaption>Figura 2. Retorno, value_loss (escala symlog) e explained_variance.
+Azul = baseline (n=5), vermelho = n=1, verde = n=32, roxo = n=128. Runs no wandb: n=5: <code>kj0lbfb9</code> &middot; n=1: <code>gfqub3oy</code> &middot; n=32: <code>zurv8rao</code> &middot; n=128: <code>joxko0pd</code>.</figcaption></figure>
+<table>
+<tr><th>num_steps</th><th>1</th><th>5 (baseline)</th><th>32</th><th>128</th></tr>
+<tr><td>value_loss mediano</td><td>0,00</td><td>0,00</td><td>31,01</td><td>458,89</td></tr>
+<tr><td>explained_variance mediana</td><td>0,529</td><td>0,712</td><td>-0,000</td><td>0,001</td></tr>
+<tr><td>desvio da explained_variance</td><td>1,684</td><td>0,501</td><td>0,000</td><td>0,002</td></tr>
+<tr><td>retorno (mediana, 30% final)</td><td>435,2</td><td>478,0</td><td>357,5</td><td>387,6</td></tr>
+</table>
+<p><span class="rot">Explicação.</span> O <code>value_loss</code> cresce de forma monótona com o
+horizonte, de praticamente zero em n=1 e n=5 para 31 em n=32 e 459 em n=128. Isso é a variância do
+alvo aparecendo: quanto mais recompensas reais entram na soma antes do bootstrap, maior a dispersão
+do número que o crítico precisa acertar. É o lado "muita variância" do Monte Carlo.</p>
+<p>A armadilha se confirmou, e de um jeito mais interessante do que eu esperava. Com n=1 o alvo é
+r + gamma*V(s'), e como estados vizinhos no CartPole têm valores parecidos, V(s) é quase igual a
+V(s'). O crítico está prevendo algo quase idêntico à própria saída deslocada de um passo, então
+<code>value_loss</code> perto de zero não quer dizer crítico bom, quer dizer alvo fácil e
+autorreferente. A <code>explained_variance</code> denuncia isso de outra forma: ela é a mais instável
+de todas as configurações (desvio 1,684, oscilando entre +1 e -2 na figura), porque a variância dos
+alvos no denominador é minúscula e qualquer erro explode a razão. Já em n=32 e n=128 ela fica colada
+em 0,000 com desvio praticamente nulo, o que significa um crítico que não explica nada da variância
+do retorno. O ator sofre junto porque a vantagem R - V(s) é a única coisa que pesa o gradiente: se V
+não acompanha R, o peso vira quase o retorno bruto e carrega toda a variância dele. O retorno final
+confirma o ponto médio: o baseline n=5 termina melhor (478) que n=32 (358) e n=128 (388). A previsão
+se confirmou quase toda, com uma correção: eu não esperava que n=1 fosse o mais rápido no começo,
+chegando a 500 por volta de 100k passos antes de perder para o baseline no fim.</p>
+
+<h2>Q3 &middot; Coeficiente de entropia (ent_coef)</h2>
+<p><span class="rot">Previsão.</span> Com ent_coef=0,1 o bônus domina e a política é empurrada para
+ficar uniforme, então espero a entropia parada perto de ln 2 = 0,693 e o retorno estacionando bem
+abaixo de 500. Com ent_coef=0 a entropia deve despencar e a política virar determinística cedo. No
+CartPole isso pode não ser fatal, mas espero mais diferença entre as duas seeds.</p>
+<p><span class="rot">Varredura.</span> <code>a2c.ent_coef</code> em {0 (2 seeds), 0,01 (baseline), 0,1}.</p>
+<figure><img src="fig_q3.png">
+<figcaption>Figura 3. Retorno e entropia. Azul = baseline, vermelho e verde tracejado = ent_coef=0
+(seeds 1 e 2), roxo = ent_coef=0,1. A linha pontilhada marca ln 2 = 0,693. Runs no wandb: baseline: <code>kj0lbfb9</code> &middot; ent=0 s1: <code>rvz5tdoh</code> &middot; ent=0 s2: <code>ncgqp1cn</code> &middot; ent=0,1: <code>e6ja6b30</code>.</figcaption></figure>
+<p><span class="rot">Explicação.</span> O lado do ent_coef alto saiu como previsto. Com 0,1 a
+entropia é a mais alta do gráfico o treino inteiro, por volta de 0,60, e o retorno estaciona em 358.
+O motivo é que o bônus entra na perda multiplicado por 10 vezes o valor do baseline, então manter a
+política aleatória passa a render mais do que melhorar a política. O agente é literalmente pago para
+continuar indeciso. A entropia não chega a colar em ln 2 porque o termo de política ainda puxa
+contra, mas fica claramente acima dos outros três runs.</p>
+<p>O lado ent_coef=0 refutou minha previsão. As duas seeds chegam a 500 por volta de 150k passos e
+ficam lá, com medianas finais de 490 e 500, acima do próprio baseline (478). E a entropia não
+colapsou: caiu devagar até 0,45 e 0,33, longe do zero que eu esperava. O CartPole é benevolente por
+três motivos que se somam: só duas ações, então mesmo uma política quase determinística ainda
+amostra a outra com probabilidade razoável; recompensa densa, +1 a cada passo, então há sinal de
+gradiente em toda transição; e episódio que termina no erro, o que devolve o agente ao início e gera
+experiência nova automaticamente. Num ambiente com muitas ações, ficar determinístico cedo tranca
+regiões inteiras do espaço de ações que nunca mais seriam amostradas. Com recompensa rara, o
+problema é pior: se a política se fecha antes de encontrar a primeira recompensa, não existe
+gradiente nenhum para corrigir o rumo, e o bônus de entropia é o que mantém a busca viva até lá.</p>
+
+<h2>Q4 &middot; Ablação do baseline (use_baseline)</h2>
+<p><span class="rot">Previsão.</span> Sem o baseline o peso vira o retorno bruto. No CartPole toda
+recompensa é +1, então esse peso é sempre positivo e grande, enquanto a vantagem fica centrada em
+zero. Espero <code>advantage_mean</code> saltando para bem positivo e <code>advantage_std</code>
+várias vezes maior. Como todo peso é positivo, toda ação amostrada tem a probabilidade empurrada
+para cima, o que deve colapsar a entropia mais rápido.</p>
+<p><span class="rot">Varredura.</span> <code>a2c.use_baseline=false</code>, 2 seeds.</p>
+<figure><img src="fig_q4.png">
+<figcaption>Figura 4. Retorno, advantage_std, advantage_mean (ambos em symlog) e entropia.
+Azul = baseline, vermelho = sem baseline seed 1, verde tracejado = seed 2. Runs no wandb: baseline: <code>kj0lbfb9</code> &middot; sem base s1: <code>slkzh30b</code> &middot; sem base s2: <code>35ymeph9</code>.</figcaption></figure>
+<p><span class="rot">Explicação.</span> Os dois gráficos de <code>advantage_*</code> mostram o
+resultado teórico da aula com bastante clareza. Com baseline, o <code>advantage_mean</code> oscila em
+torno de zero, passando por valores positivos e negativos, e o <code>advantage_std</code> fica na
+casa de 0,01 no fim do treino, quando o crítico já acompanha bem os retornos. Sem baseline, a média
+sobe para a faixa de 50 a 100 e nunca cruza o zero, e o desvio fica entre 9 e 12. Subtrair V(s) não
+mudou para onde o gradiente aponta em esperança, mudou a escala e a dispersão do peso que multiplica
+cada log-probabilidade, que é exatamente o que a teoria diz.</p>
+<p>A consequência prática é severa. Como todo peso é positivo, cada ação que foi amostrada tem a
+probabilidade empurrada para cima, sem exceção, e a magnitude do empurrão depende do retorno e não
+da qualidade relativa daquela ação. Quem for amostrada mais vezes ganha, mesmo sendo pior. Isso é
+realimentação positiva: a ação um pouco mais provável é amostrada mais, sobe mais, e o ciclo se
+fecha. A entropia despenca para 0,000 nos dois seeds por volta de 200k passos, contra 0,56 do
+baseline, e o retorno acompanha: a seed 1 chega a 480 em torno de 200k e depois desaba para 120, e a
+seed 2 nunca passa de 269 e termina em 94. A previsão se confirmou inteira, e o cruzamento com a Q3
+fecha o argumento: lá, tirar o bônus de entropia sozinho fez a entropia só derivar até 0,33 e o
+agente resolveu a tarefa; aqui, mantendo o bônus mas tirando o baseline, ela zera. O colapso vem do
+peso sempre positivo, não da ausência do bônus.</p>
+
+<h2>Extra &middot; LunarLander-v3</h2>
+<p><span class="rot">O que eu esperava e o que mudei.</span> Parti do <code>a2c_cartpole</code> e
+mudei três coisas: mais passos (o CartPole resolve em 500k), mais ambientes e, principalmente,
+<code>num_steps</code> de 5 para 32. O raciocínio era que o sinal que importa no LunarLander é o
+pouso, que chega no fim do episódio, então um alvo de 5 passos quase não o enxergaria.</p>
+<p><span class="rot">Varredura.</span> <code>num_steps</code> em {5, 8, 32}, <code>num_envs</code> em
+{8, 16, 32} e orçamento em {3M, 6M, 12M} passos. Config final em
+<code>configs/a2c_lunarlander.yml</code>.</p>
+<figure><img src="fig_lunar.png">
+<figcaption>Figura 5. Retorno, explained_variance e entropia no LunarLander. Vermelho = minha escolha
+inicial (n=32), roxo tracejado = n=5 com 8 envs em 6M, azul = configuração final (n=5, 16 envs, 12M).
+A pontilhada marca o limiar de 200. Runs no wandb: n=32: <code>qd17pm5u</code> &middot; n=5 8env: <code>41ywr8g5</code> &middot; final: <code>wbz9hx6x</code>.</figcaption></figure>
+<table>
+<tr><th>configuração</th><th>n=32, 16 envs, 3M</th><th>n=8, 16 envs, 6M</th><th>n=5, 32 envs, 6M</th><th>n=5, 8 envs, 6M</th><th>n=5, 16 envs, 12M</th></tr>
+<tr><td>retorno final</td><td>-83</td><td>-60</td><td>-64</td><td>215</td><td>265</td></tr>
+</table>
+<p><span class="rot">O que aconteceu.</span> A minha escolha de <code>num_steps=32</code> foi a pior
+de todas, terminando em -83 contra +98 do mesmo treino com n=5. O painel do meio explica: o
+<code>explained_variance</code> do crítico fica em torno de 0,5 com n=32 e em 0,95 com n=5. É o mesmo
+mecanismo da Q2, só que amplificado. No CartPole a recompensa é sempre +1 e o retorno de 32 passos
+ainda é um número contido; aqui ele soma recompensas que vão de -400 a +250, então a variância do
+alvo explode e o crítico não consegue acompanhar. Quando V(s) não acompanha R, a vantagem R - V(s)
+vira quase o retorno bruto e o gradiente de política passa a carregar todo esse ruído.</p>
+<p>O segundo padrão que apareceu foi o da Q1, também invertido em relação ao que eu tinha chutado.
+Aumentar o lote piorou: 32 ambientes deu -64 e <code>num_steps=8</code> deu -60, enquanto a
+configuração vencedora com 6M passos foi a de <b>menor</b> lote, 8 ambientes, que resolveu com 215.
+Com orçamento fixo de passos, lote menor significa mais atualizações, e aqui isso pesou mais que a
+limpeza do gradiente. A versão final, com n=5, 16 ambientes e 12M passos, cruza o limiar de 200 por
+volta de 5M e termina em 265, com avaliação greedy de <b>270,9 ± 16,9</b> e 10 de 10 episódios acima
+de 200. O que mais mudou em relação ao CartPole foi o orçamento: 24 vezes mais passos para uma tarefa
+com o dobro de ações e recompensa muito mais dispersa. A entropia acompanha: começa em ln 4 = 1,386,
+cai para perto de 0,45 e fica lá, sem colapsar, que é o bônus de entropia fazendo o trabalho que a
+Q3 descreve.</p>
+
+</body></html>
