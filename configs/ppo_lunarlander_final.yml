@@ -1,0 +1,49 @@
+# PPO — LunarLander-v3, config final da Parte 4.
+#
+# Partiu de configs/ppo_lunarlander.yml. Duas mudancas, ambas motivadas pelo
+# diagnostico do baseline (approx_kl ~ 2e-5 e clipfrac = 0,000 o treino inteiro,
+# ou seja, a politica mal se movia e o clipping nunca atuava):
+#
+#   learning_rate  2.5e-4 -> 1e-3   o passo vindo do CartPole era pequeno demais
+#   update_epochs  4      -> 10     reaproveita cada rollout, que e o mecanismo
+#                                   que o PPO tem e o A2C nao
+#
+#   total_timesteps 1000000 -> 2000000  (o teto permitido)
+#
+# O orcamento so foi aumentado DEPOIS das duas mudancas acima. Antes delas, 2M
+# dava 175 contra 173 do 1M, ou seja, nao adiantava. Com elas, 1M chegava a 214
+# mas oscilava e caia; 2M chega a 240 e segura, porque o anneal_lr alonga a cauda
+# de passo pequeno onde a politica boa se fixa.
+
+algorithm: ppo
+env_id: LunarLander-v3
+seed: 1
+cuda: false
+total_timesteps: 2000000
+num_envs: 4
+
+track: true
+capture_video: true
+save_model: true
+checkpoint_every: 0
+
+network: DiscreteActorCritic
+network_kwargs:
+  activation: Tanh
+  hidden_layers_size: 64
+
+ppo:
+  learning_rate: 1.0e-3   # era 2.5e-4
+  anneal_lr: true
+  num_steps: 128
+  gamma: 0.99
+  gae_lambda: 0.95
+  num_minibatches: 4
+  update_epochs: 10       # era 4
+  norm_adv: true
+  clip_coef: 0.2
+  clip_vloss: true
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  target_kl: null
