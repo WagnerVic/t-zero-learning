@@ -145,7 +145,28 @@ def compute_gae(
         advantages + values`` (the critic's regression target).
     """
     # ===================== YOUR CODE HERE (Part 1) =====================
-    raise NotImplementedError("Implement compute_gae")
+    advantages = torch.zeros_like(rewards)
+    lastgaelam = torch.zeros_like(next_value)
+
+    for t in reversed(range(rewards.shape[0])):
+        # Convencao do CleanRL: dones[t] e o done do passo ANTERIOR a t. Logo, o
+        # que diz se podemos bootstrapar de t para t+1 e o done de t+1, e no
+        # ultimo passo e o next_done.
+        if t == rewards.shape[0] - 1:
+            nextnonterminal = 1.0 - next_done
+            nextvalues = next_value
+        else:
+            nextnonterminal = 1.0 - dones[t + 1]
+            nextvalues = values[t + 1]
+
+        # erro de TD de um passo
+        delta = rewards[t] + gamma * nextvalues * nextnonterminal - values[t]
+        # GAE: soma geometrica dos deltas futuros, cortada no fim do episodio
+        lastgaelam = delta + gamma * gae_lambda * nextnonterminal * lastgaelam
+        advantages[t] = lastgaelam
+
+    # alvo do critico: A + V devolve o retorno que a vantagem implica
+    return advantages, advantages + values
     # ===================================================================
 
 
@@ -162,7 +183,17 @@ def compute_clipped_policy_loss(
     objective.
     """
     # ===================== YOUR CODE HERE (Part 2) =====================
-    raise NotImplementedError("Implement compute_clipped_policy_loss")
+    # oldlogprob e advantages sao constantes: o gradiente so pode fluir pela
+    # politica nova. Sem o detach, a razao empurraria tambem a politica antiga.
+    logratio = newlogprob - oldlogprob.detach()
+    ratio = logratio.exp()
+    adv = advantages.detach()
+
+    # Objetivo = min(r*A, clip(r)*A). Com o sinal invertido, o minimo vira
+    # maximo: descer nesta perda e subir no objetivo.
+    perda_sem_clip = -adv * ratio
+    perda_com_clip = -adv * torch.clamp(ratio, 1.0 - clip_coef, 1.0 + clip_coef)
+    return torch.max(perda_sem_clip, perda_com_clip).mean()
     # ===================================================================
 
 
@@ -177,7 +208,14 @@ def approx_kl_and_clipfrac(
     ``clipfrac`` is the fraction of samples with ``|ratio - 1| > clip_coef``.
     """
     # ===================== YOUR CODE HERE (Part 3) =====================
-    raise NotImplementedError("Implement approx_kl_and_clipfrac")
+    # Diagnostico puro: no_grad garante que nada disso entre no backward.
+    with torch.no_grad():
+        logratio = newlogprob - oldlogprob
+        ratio = logratio.exp()
+        # Estimador de Schulman: sempre >= 0 e com variancia menor que -logratio
+        approx_kl = ((ratio - 1.0) - logratio).mean()
+        clipfrac = ((ratio - 1.0).abs() > clip_coef).float().mean()
+    return approx_kl, clipfrac
     # ===================================================================
 
 
