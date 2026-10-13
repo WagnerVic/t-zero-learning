@@ -1,0 +1,134 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Atividade PPO</title>
+<style>
+ @page { size: A4; margin: 11mm 13mm; }
+ *{box-sizing:border-box}
+ body{font-family:"Helvetica Neue",Arial,sans-serif;font-size:8.6pt;line-height:1.26;color:#111;margin:0}
+ h1{font-size:15pt;margin:0 0 2mm;color:#1a3a5c}
+ h2{font-size:10.2pt;margin:2.6mm 0 1mm;color:#1a3a5c;border-bottom:1px solid #cdd8e3;padding-bottom:.6mm}
+ h3{font-size:9pt;margin:2mm 0 .8mm;color:#33608f}
+ .meta{font-size:8pt;color:#444;margin-bottom:2mm}
+ p{margin:0 0 1.2mm;text-align:justify}
+ figure{margin:1.1mm 0;page-break-inside:avoid}
+ figure img{width:100%}
+ figcaption{font-size:7.2pt;color:#555;font-style:italic;margin-top:.6mm}
+ table{border-collapse:collapse;font-size:7.6pt;margin:1.2mm 0;width:100%}
+ th,td{border:1px solid #ccd;padding:.6mm 1.4mm;text-align:right}
+ th{background:#eef3f8;text-align:center}
+ td:first-child,th:first-child{text-align:left}
+ code{font-family:Menlo,monospace;font-size:7.8pt;background:#f2f4f7;padding:0 .5mm}
+ .ok{color:#1a7a3a;font-weight:700}.ruim{color:#b32020;font-weight:700}
+</style></head><body>
+
+<h1>Atividade: Proximal Policy Optimization (PPO)</h1>
+<div class="meta">Wagner Victor Alves de Menezes e Victor Ribeiro Jacome (dupla) &nbsp;|&nbsp;
+Fork: https://github.com/WagnerVic/t-zero-learning &nbsp;|&nbsp;
+Configs: <code>ppo_lunarlander.yml</code> (inicial), <code>ppo_lunarlander_final.yml</code> (final),
+<code>a2c_lunarlander.yml</code> (Parte 5). Ambiente LunarLander-v3; os 20 testes de
+<code>tests/test_ppo.py</code> passam.</div>
+
+<h2>Parte 4 &middot; Resolvendo o LunarLander</h2>
+
+<h3>Por que o config inicial não resolve</h3>
+<p>Com os defaults do CleanRL o agente chega a retorno <b>&minus;3,0</b> e <b>5,3</b> nas duas seeds.
+O diagnóstico não está na curva de retorno, e sim nos dois gráficos novos do PPO: o
+<code>approx_kl</code> fica em <b>0,00011</b> e o <code>clipfrac</code> em <b>0,0000</b> o treino
+inteiro (Figura 1). Ou seja, dentro das 4 épocas de cada rollout a política praticamente não se
+move, e o clipping, que é o mecanismo que dá nome ao algoritmo, nunca chega a atuar. O
+<code>explained_variance</code> de 0,60 e 0,50 mostra que o crítico não era o problema.</p>
+
+<h3>As três mudanças</h3>
+<table>
+<tr><th>chave</th><th>de</th><th>para</th><th>motivo observado</th><th>efeito</th></tr>
+<tr><td>ppo.learning_rate</td><td>2,5e-4</td><td>1,0e-3</td><td>approx_kl ~1e-4 e clipfrac 0: passo pequeno demais</td><td>&minus;3 &rarr; 173</td></tr>
+<tr><td>ppo.update_epochs</td><td>4</td><td>10</td><td>o rollout seguia subaproveitado após o lr</td><td>173 &rarr; 214</td></tr>
+<tr><td>total_timesteps</td><td>1.000.000</td><td>2.000.000</td><td>as duas seeds cruzavam 200 e recuavam</td><td>214 &rarr; 240</td></tr>
+</table>
+<p>A ordem importa e é o ponto principal desta parte. <b>Dobrar o orçamento só funciona depois das
+outras duas mudanças.</b> Com o config quase original, 2M deram 175 contra 173 do 1M, ou seja, nada:
+passo de ambiente desperdiçado. Com <code>lr=1e-3</code> e 10 épocas, os mesmos 2M levam de 214 para
+240. Além do volume, o 2M muda outra coisa: como o <code>anneal_lr</code> distribui a queda da taxa
+ao longo do treino inteiro, dobrar o orçamento alonga a cauda de passo pequeno, e é nela que a
+política boa se fixa em vez de ser destruída.</p>
+
+<figure><img src="fig1.png">
+<figcaption>Figura 1. Config inicial (vermelho, 2 seeds) contra final (azul, 2 seeds). O
+<code>approx_kl</code> está em escala log: a diferença entre os dois é de duas ordens de grandeza.
+Runs no wandb, projeto <code>ppo-assignment</code>.</figcaption></figure>
+
+<p>Os diagnósticos confirmam o mecanismo. Do inicial para o final, o <code>approx_kl</code> sobe de
+0,00011 para <b>0,0032</b> e o <code>clipfrac</code> de 0,0000 para <b>0,013</b>: a política passou a
+se mover de verdade e o clipping passou a atuar. O <code>explained_variance</code> subiu de 0,60 para
+<b>0,92</b> e a entropia caiu de 0,83 para 0,48, que é a política deixando de ser quase uniforme.</p>
+
+<h3>Runs que não deram certo</h3>
+<table>
+<tr><th>tentativa</th><th>retorno</th><th>por que falhou</th></tr>
+<tr><td>num_envs 4 &rarr; 16 (lote 2048)</td><td class="ruim">&minus;38,8</td><td rowspan="2">Com orçamento de passos fixo, lote maior é menos atualização. O gargalo aqui nunca foi ruído de gradiente, e sim falta de movimento da política.</td></tr>
+<tr><td>num_envs 4 &rarr; 8 (lote 1024)</td><td class="ruim">164</td></tr>
+<tr><td>gamma 0,99 &rarr; 0,999</td><td class="ruim">123</td><td>Horizonte maior aumenta a variância do alvo e piora o crítico.</td></tr>
+<tr><td>learning_rate 1e-3 &rarr; 5e-4</td><td>216</td><td>Funciona, mas abaixo do 240. Mantido 1e-3.</td></tr>
+<tr><td>gae_lambda 0,95 &rarr; 0,98</td><td>265 / 248</td><td><b>O caso mais instrutivo.</b> Melhora o retorno de treino nas duas seeds, mas piora a avaliação gulosa (231,5 e 203,5 contra 271,7 e 235,5) e triplica o desvio na seed 1 (76,9 contra 13,7). Quem lesse só a curva de retorno adotaria e entregaria pior.</td></tr>
+</table>
+
+<h3>Resultado</h3>
+<table>
+<tr><th>seed</th><th>episodic_return_mean_last100</th><th>eval/mean_return (10 ep.)</th><th>critério</th></tr>
+<tr><td>1</td><td>240</td><td>271,7 ± 13,7</td><td class="ok">passa</td></tr>
+<tr><td>2</td><td>234</td><td>235,5 ± 111,5</td><td class="ok">passa</td></tr>
+</table>
+<p>Critério atendido nas duas seeds, com 2M passos (o teto permitido). Uma ressalva honesta: o desvio
+da avaliação da seed 2 é 111,5 contra 13,7 da seed 1. A média passa, mas essa política ainda erra
+alguns pousos. É a mesma instabilidade que motivou o aumento do orçamento, atenuada e não eliminada.</p>
+
+<figure><img src="fig2.png">
+<figcaption>Figura 2. À esquerda, o efeito acumulado das três mudanças (seed 1). À direita, o config
+final nas duas seeds. A linha pontilhada marca o critério de 200.</figcaption></figure>
+
+<h2>Parte 5 &middot; PPO contra A2C</h2>
+<p>O A2C é o nosso, da atividade anterior (<code>a2c_lunarlander.yml</code>: n=5, 16 ambientes), com o
+orçamento reduzido de 12M para os 2M do PPO. Todos os runs desta seção foram executados em sequência,
+nunca em paralelo, porque <code>SPS</code> e tempo de relógio perdem o sentido se os treinos disputam CPU.</p>
+
+<table>
+<tr><th></th><th>retorno final</th><th>passos até 0</th><th>até 100</th><th>até 200</th><th>tempo</th><th>SPS</th><th>atualizações</th></tr>
+<tr><td>PPO seed 1</td><td>240</td><td>91k</td><td>130k</td><td>292k</td><td>350 s</td><td>5.588</td><td rowspan="2">156.240</td></tr>
+<tr><td>PPO seed 2</td><td>234</td><td>65k</td><td>90k</td><td>653k</td><td>255 s</td><td>6.578</td></tr>
+<tr><td>A2C seed 1</td><td class="ruim">82,6</td><td>248k</td><td>1.034k</td><td class="ruim">nunca</td><td>60 s</td><td>33.731</td><td rowspan="2">25.000</td></tr>
+<tr><td>A2C seed 2</td><td class="ruim">&minus;115</td><td>232k</td><td>529k</td><td class="ruim">nunca</td><td>64 s</td><td>32.723</td></tr>
+</table>
+
+<h3>Eficiência amostral: o PPO ganha de longe</h3>
+<p>Para chegar a retorno 100 o PPO precisa de 90 a 130 mil passos e o A2C de 529 mil a 1,03 milhão,
+uma diferença de 5 a 8 vezes. Em 200 a comparação acaba: o PPO chega entre 292 e 653 mil passos e o
+A2C <b>não chega nunca</b> dentro dos 2M. O mecanismo é o <b>reuso de amostras</b>: dos mesmos 2M
+passos de ambiente o PPO extrai <b>156.240</b> passos de gradiente (10 épocas × 4 minibatches por
+rollout) contra <b>25.000</b> do A2C (um por rollout), 6,2 vezes mais. A razão de probabilidades e o
+clipping são o que torna esse reuso seguro, e o <code>clipfrac</code> de 0,013 mostra que ele de fato
+está contendo as amostras que se afastam demais.</p>
+
+<h3>Tempo de relógio: a resposta inverte</h3>
+<p>Por passo de ambiente o A2C é cerca de <b>5 vezes mais rápido</b> (33 mil contra 6 mil SPS), pela
+mesma razão: cada passo coletado custa 40 passos de gradiente no PPO e 1 no A2C. Os 2M do PPO levam
+350 s e os do A2C, 60 s. A pergunta então é o que o A2C faria com os mesmos 350 s. Nós medimos isso:
+nessa janela ele percorre cerca de 11,6M passos, e o nosso run de 12M da atividade anterior estava em
+<b>239</b> de retorno aos 350 s, contra <b>240</b> do PPO. <b>Com o mesmo tempo de relógio, empatam.</b></p>
+
+<figure><img src="fig3.png">
+<figcaption>Figura 3. O mesmo par de algoritmos em dois eixos. À esquerda, por passos de ambiente, o
+PPO resolve e o A2C não. À direita, por tempo de relógio, com o A2C de 12M incluído: as curvas se
+encontram.</figcaption></figure>
+
+<h3>Estabilidade e conclusão</h3>
+<p>Entre seeds o PPO varia pouco no retorno (240 e 234) mas muito na avaliação (desvio 13,7 e 111,5);
+o A2C a 2M varia mais em tudo (82,6 e &minus;115). Na Figura 3 à esquerda, as duas curvas do PPO têm
+quedas marcadas ao longo do treino, resquício da instabilidade da Parte 4.</p>
+<p>A conclusão depende do recurso escasso, e é isso que torna a comparação interessante. <b>Se o caro
+é interagir com o ambiente</b>, que é o caso de um robô real ou de um simulador pesado, o PPO é
+claramente superior: resolve com 2M onde o A2C não chega. <b>Se o caro é tempo de CPU</b> e o ambiente
+é barato, como o LunarLander, o A2C compensa a ineficiência amostral com volume e empata. Das quatro
+mudanças do PPO, três (reuso de amostras, razão de probabilidades e clipping) explicam tanto a
+vantagem amostral quanto o custo por passo; a quarta, o GAE, aparece no
+<code>explained_variance</code> de 0,92 do crítico, bem acima do que o A2C alcançava com retorno de
+n passos.</p>
+
+</body></html>
