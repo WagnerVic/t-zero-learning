@@ -143,7 +143,23 @@ def squashed_gaussian_sample(
         ``tanh(mean) * action_scale + action_bias`` (B, A).
     """
     # ===================== YOUR CODE HERE (Part 1) =====================
-    raise NotImplementedError("Implement squashed_gaussian_sample")
+    std = log_std.exp()
+    normal = torch.distributions.Normal(mean, std)
+
+    # rsample e nao sample: o truque da reparametrizacao (u = mean + std*eps)
+    # mantem o grafo, para o gradiente da perda do ator chegar em mean e log_std
+    # ATRAVES da acao. Com sample() o caminho seria cortado.
+    u = normal.rsample()
+    y = torch.tanh(u)
+    action = y * action_scale + action_bias
+
+    # Mudanca de variaveis: o tanh comprime a densidade, entao subtraimos o log
+    # do jacobiano. O 1e-6 evita log(0) quando |y| encosta em 1.
+    log_prob = normal.log_prob(u) - torch.log(action_scale * (1 - y.pow(2)) + 1e-6)
+    log_prob = log_prob.sum(dim=-1, keepdim=True)
+
+    mean_action = torch.tanh(mean) * action_scale + action_bias
+    return action, log_prob, mean_action
     # ===================================================================
 
 
@@ -168,7 +184,17 @@ def compute_soft_q_target(
     Returns a (B,) tensor.
     """
     # ===================== YOUR CODE HERE (Part 2) =====================
-    raise NotImplementedError("Implement compute_soft_q_target")
+    # min entre os dois criticos: o lado pessimista que combate a
+    # superestimacao que aparecia no DQN.
+    min_q = torch.min(next_q1, next_q2)
+
+    # Valor soft de s': o Q pessimista menos a penalidade de entropia. Como
+    # log_pi e negativo para politicas espalhadas, -alpha*log_pi premia
+    # manter entropia.
+    soft_v = min_q - alpha * next_log_pi
+
+    # (1 - done) corta o bootstrap em transicao terminal.
+    return rewards + gamma * (1.0 - dones) * soft_v
     # ===================================================================
 
 

@@ -101,7 +101,10 @@ def main():
     print(f"Experiment name: {args.exp_name}")
     print(f"Env: {args.env_id} kwargs={args.env_kwargs}")
     print(f"Total timesteps: {args.total_timesteps:,}")
-    print(f"Learning rate: {args.algo.learning_rate}")
+    # Nem todo algoritmo tem uma unica learning_rate: o SAC usa policy_lr e q_lr.
+    _lrs = [f"{k}={getattr(args.algo, k)}" for k in ("learning_rate", "policy_lr", "q_lr")
+            if hasattr(args.algo, k)]
+    print("Learning rate: " + (", ".join(_lrs) if _lrs else "n/a"))
     print(f"Number of environments: {args.num_envs}")
     print(f"Seed: {args.seed}")
 
