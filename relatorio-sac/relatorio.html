@@ -1,0 +1,121 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Atividade SAC</title>
+<style>
+ @page{size:A4;margin:10mm 12mm}*{box-sizing:border-box}
+ body{font-family:"Helvetica Neue",Arial,sans-serif;font-size:8.3pt;line-height:1.24;color:#111;margin:0}
+ h1{font-size:14pt;margin:0 0 1.6mm;color:#1a3a5c}
+ h2{font-size:10pt;margin:2.4mm 0 .9mm;color:#1a3a5c;border-bottom:1px solid #cdd8e3;padding-bottom:.5mm}
+ h3{font-size:8.8pt;margin:1.8mm 0 .6mm;color:#33608f}
+ .meta{font-size:7.6pt;color:#444;margin-bottom:1.6mm}
+ p{margin:0 0 1.1mm;text-align:justify}
+ figure{margin:1mm 0;page-break-inside:avoid}figure img{width:100%}
+ figcaption{font-size:6.9pt;color:#555;font-style:italic;margin-top:.5mm}
+ table{border-collapse:collapse;font-size:7.2pt;margin:1mm 0;width:100%}
+ th,td{border:1px solid #ccd;padding:.5mm 1.2mm;text-align:right}
+ th{background:#eef3f8;text-align:center}td:first-child,th:first-child{text-align:left}
+ code{font-family:Menlo,monospace;font-size:7.4pt;background:#f2f4f7;padding:0 .4mm}
+ .ok{color:#1a7a3a;font-weight:700}.ruim{color:#b32020;font-weight:700}.neu{color:#7a6a1a;font-weight:700}
+</style></head><body>
+
+<h1>Atividade: Soft Actor-Critic (SAC) no Hopper-v5</h1>
+<div class="meta">Wagner Victor Alves de Menezes &nbsp;|&nbsp; Fork: https://github.com/WagnerVic/t-zero-learning
+(<code>algorithms/sac.py</code>, <code>configs/sac_hopper.yml</code>) &nbsp;|&nbsp;
+wandb: https://wandb.ai/wagnervicwv-federal-university-of-goi-s/sac-assignment &nbsp;|&nbsp; 100.000 passos de ambiente em todos os runs.</div>
+<p><b>Partes 1 e 2.</b> <code>squashed_gaussian_sample</code> amostra com <code>rsample()</code>, para o
+gradiente da perda do ator chegar em μ e σ através da ação, e corrige a densidade pelo jacobiano do
+tanh. <code>compute_soft_q_target</code> usa o mínimo entre os dois críticos menos a penalidade de
+entropia, cortando o bootstrap no terminal. Os 16 testes de <code>tests/test_sac.py</code> passam.
+Observação: o <code>train.py</code> do upstream quebra qualquer treino de SAC (imprime
+<code>args.algo.learning_rate</code>, que o <code>SACConfig</code> não tem); corrigi no harness, sem
+tocar no algoritmo.</p>
+
+<h2>Parte 3 &middot; Eficiência amostral (3 seeds por config)</h2>
+<table>
+<tr><th>mudança</th><th>motivo observado</th><th>eval/mean_return</th><th>last100</th><th>veredito</th></tr>
+<tr><td>config inicial (CleanRL)</td><td>referência</td><td>2226 (979&ndash;2986)</td><td>874 (414&ndash;1142)</td><td>referência</td></tr>
+<tr><td>updates_per_step 1&rarr;2</td><td>nos 3 seeds do inicial o <code>qf1_values</code> sobe até 196/219/223 ainda em curva aos 100k, sem platô: os críticos não convergiram no orçamento</td><td>972 (16&ndash;2604)</td><td>1214 (1100&ndash;1338)</td><td class="ruim">piora</td></tr>
+<tr><td>tau 0,005&rarr;0,02</td><td>o <code>q_minus_return</code> do inicial oscila entre &minus;80 e +20 entre medições, compatível com rede-alvo defasada</td><td>1789 (750&ndash;3256)</td><td>1405 (1278&ndash;1510)</td><td class="neu">indistinguível</td></tr>
+<tr><td>learning_starts 5000&rarr;1000</td><td>5% do orçamento gasto em ação aleatória, sem aprender</td><td>1503 (979&ndash;2538)</td><td>1095 (955&ndash;1332)</td><td class="neu">indistinguível</td></tr>
+</table>
+<p>Runs no wandb: inicial <code>fh1bhsbj, u9dhy33e, 6kuhhivi</code>; utd2 <code>yrv8frja, rgidvdtu, lcxebxg8</code>; tau02 <code>j2yi2sfr, piaiyv2b, th1p5sso</code>; ls1k <code>t54h37tt, zjk3x3ux, qmv7jqs5</code>; ablações <code>6izl7y4c, u1thbz33</code> e <code>65iky1ux, 9ws89l8h</code>; PPO <code>i7h1rt5e, 1hrp0765</code>.</p>
+<p><b>Leitura.</b> O intervalo do config inicial (979 a 2986) cobre quase inteiramente os dos três
+candidatos, então nenhuma diferença de média é separável da variação entre seeds. Pelo critério do
+enunciado, <b>o config final é o próprio config inicial</b>. Duas observações que a tabela sozinha
+esconde. Primeira: a minha hipótese do <code>updates_per_step</code> estava errada. Eu justifiquei
+esse candidato porque os críticos ainda não tinham convergido, mas dobrar os passos de gradiente
+derrubou duas seeds para eval 16 e 561. Com buffer de apenas 100 mil transições, mais updates sobre
+os mesmos dados desestabiliza em vez de ajudar. Segunda: o <code>eval</code> e o <code>last100</code>
+discordam. O config inicial tem o melhor eval (2226) e o <b>pior</b> last100 (874). Quem olhasse só a
+curva de treino elegeria o <code>tau=0,02</code> como vencedor.</p>
+<figure><img src="fig1.png"><figcaption>Figura 1. Config inicial contra os candidatos, 3 seeds cada.
+A sobreposição entre as famílias de curvas é o resultado principal desta parte.</figcaption></figure>
+
+<h2>Parte 4 &middot; O que cada peça faz (2 seeds cada)</h2>
+
+<h3>Ablação 1: temperatura fixa (<code>autotune=false</code>, alpha = 0,09)</h3>
+<p><b>Escolha do valor.</b> Nos três runs do config final o <code>losses/alpha</code> cai de 0,90 para
+a faixa 0,067 a 0,094 até 20 mil passos e fica. Fixei em 0,09, o patamar que o próprio controlador
+encontra.</p>
+<p><b>Previsão (escrita antes).</b> Diferença pequena no retorno, porque o valor fixo é o que o
+autotune acharia. A diferença apareceria no começo: o autotune parte de 0,90 e explora muito mais nos
+primeiros 20 mil passos. E a entropia deixaria de colar no alvo, já que sem o controlador ela vira
+consequência e não alvo.</p>
+<p><b>O que aconteceu.</b> O eval ficou em 2189 (1208 a 3170) contra 2226 do config final, dentro do
+ruído, como previsto. Mas o <code>last100</code> caiu de 874 para 510 (358 a 661), uma piora que
+aparece na curva de treino e não na avaliação final. A parte da entropia da previsão <b>falhou</b>:
+ela ficou em &minus;3,06, praticamente colada no alvo de &minus;3,0, igual ao config com autotune
+(&minus;2,99). O raciocínio errado foi tratar o alvo como se fosse imposto pelo controlador. Ele é
+imposto pela <i>perda do ator</i> (<code>algorithms/sac.py</code>, termo
+<code>alpha * log_pi - min_q</code>): com alpha no valor certo, o ótimo dessa perda já fica na mesma
+entropia. O controlador escolhe o alpha, não a entropia diretamente. Runs <code>6izl7y4c, u1thbz33</code>.</p>
+<figure><img src="fig2.png"><figcaption>Figura 2. Ablação 1 contra o config final.
+A linha pontilhada no painel do meio é o <code>target_entropy</code> = &minus;3,0.</figcaption></figure>
+
+<h3>Ablação 2: um crítico só (<code>clipped_double_q=false</code>)</h3>
+<p><b>Previsão (escrita antes).</b> É a ablação que deve doer mais. Sem o mínimo entre os dois
+críticos o alvo passa a usar só Q1 e o erro deixa de ser cortado pelo lado pessimista, então
+<code>qf1_values</code> cresceria acima do baseline e <code>q_minus_return</code> ficaria positivo e
+crescente. O retorno cairia, porque o ator maximiza um Q inflado.</p>
+<p><b>O que aconteceu.</b> A parte do diagnóstico se confirmou de forma extrema. O
+<code>q_minus_return</code>, que no config final oscila em torno de zero (média &minus;1,0), vai a
+<b>+461</b> com um crítico só, e o <code>qf1_values</code> sai de 210 para <b>524</b>. É a assinatura
+limpa da superestimação, e a linha que a explica é a do alvo em
+<code>compute_soft_q_target</code>: trocar <code>torch.min(next_q1, next_q2)</code> por
+<code>next_q1</code> remove o viés pessimista que compensava o erro de estimativa.</p>
+<p>Mas a <b>previsão do retorno falhou</b>: o eval foi 2398 (1994 a 2802), acima dos 2226 do config
+final, e o <code>last100</code> também (984 contra 874). Superestimar o Q em mais de 400 não impediu
+o ator de aprender dentro de 100 mil passos. A explicação que me parece mais provável é que o que
+guia o ator é a <i>ordem</i> entre ações, não o valor absoluto: se o crítico infla tudo de forma
+parecida, o argmax continua apontando para o mesmo lugar. O dano da superestimação deve aparecer em
+horizontes mais longos, quando o viés passa a ser desigual entre regiões do espaço de ações. Runs
+<code>65iky1ux, 9ws89l8h</code>.</p>
+<figure><img src="fig3.png"><figcaption>Figura 3. Ablação 2 contra o config final.
+A pontilhada no primeiro painel marca o zero: acima dela os críticos superestimam.</figcaption></figure>
+
+<h2>Parte 5 &middot; SAC contra PPO contínuo (mesmos 100k passos)</h2>
+<table>
+<tr><th></th><th>eval/mean_return</th><th>last100</th><th>tempo</th><th>SPS</th><th>num_updates</th><th>reuso por transição</th></tr>
+<tr><td>SAC (config final)</td><td>2226 (979&ndash;2986)</td><td>874</td><td>642 s</td><td>189</td><td>~95.000</td><td>~243&times;</td></tr>
+<tr><td>PPO contínuo, sem ajuste</td><td>356 (340&ndash;373)</td><td>341</td><td>69 s</td><td>1.474</td><td>7.680</td><td>10&times;</td></tr>
+</table>
+<p><b>Eficiência amostral.</b> Com os mesmos 100 mil passos o SAC chega a 2226 de eval e o PPO a 356,
+uma diferença de 6,3 vezes. A peça que explica isso é o <b>replay off-policy</b>: com buffer de 1
+milhão e só 100 mil passos coletados, nada é descartado, e cada transição entra em cerca de 243
+passos de gradiente (95 mil updates com lote 256, sobre 100 mil transições). No PPO cada transição é
+usada nas 10 épocas do seu rollout e depois jogada fora. São 24 vezes mais reuso, e é esse o regime
+em que o off-policy compensa. Minha previsão acertou a direção mas exagerou a magnitude: eu esperava
+duas ordens de grandeza de diferença no reuso, e o medido foi 24 vezes.</p>
+<p><b>Tempo de relógio.</b> A resposta inverte, como eu previa. O PPO termina os 100 mil passos em 69 segundos e o SAC leva 642, nove vezes mais, porque o SAC faz um passo de gradiente a cada passo de
+ambiente enquanto o PPO faz 7.680 updates no total. Os dois tempos foram medidos com sete treinos dividindo a mesma CPU, então os valores absolutos estão inflados; como a disputa foi igual para os dois, a razão entre eles é o que vale. Se o candidato de <code>updates_per_step=2</code>
+tivesse vencido a Parte 3, essa desvantagem dobraria: o mesmo orçamento de passos custaria o dobro do
+tempo. Como ele não venceu, o config final mantém a proporção de um update por passo.</p>
+<p><b>Mecanismo, peça por peça.</b> O <b>replay off-policy</b> explica a vantagem amostral e o custo
+por passo, que são o mesmo fato visto de dois lados. A <b>entropia máxima</b> aparece na Figura 2: o
+alpha estabiliza em 0,09 e segura a entropia no alvo, mantendo exploração sem precisar de ruído
+externo. Os <b>dois críticos</b> aparecem na Figura 3, mantendo o <code>q_minus_return</code> em zero
+contra +461 da ablação. O <b>ator reparametrizado</b> é o que torna tudo isso treinável: sem o
+<code>rsample()</code> o gradiente não atravessaria a ação até μ e σ, e a perda do ator não teria por
+onde descer.</p>
+<figure><img src="fig4.png"><figcaption>Figura 4. SAC e PPO nos mesmos 100 mil passos. À esquerda por
+passos de ambiente, à direita por tempo de relógio.</figcaption></figure>
+
+</body></html>
